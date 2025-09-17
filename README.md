@@ -102,10 +102,5 @@ The pipeline creates:
 * Requires **Snakemake ≥ X.Y.Z** (specify your version).
 * For reproducibility, consider creating a `conda` environment or `environment.yml`.
 
----
 
-### Contributing
-
-Pull requests and issues are welcome!
-Please run `snakemake --lint` before submitting changes.
 
