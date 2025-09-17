@@ -1,0 +1,312 @@
+"""
+Analysis Pipeline for SV benchmarking
+
+Snakefile workflow dry run: snakemake --config -np
+
+Run with each rule as a separate job, grouping truvari together: 
+snakemake --jobs 10 --cluster "qsub -W group_list=example_PBS_group -A example_PBS_group -l walltime={resources.walltime_h}:00:00 -l mem={resources.mem_mb}MB -l nodes=1:ppn={threads} --keep-going --groups truvari=trugroup --group-components trugroup=10
+"""
+
+import glob
+import re
+import pathlib
+import pandas as pd
+import os
+from typing import List
+from pathlib import Path
+
+## Pipeline working directory
+pipeline_workdir = os.getcwd()
+
+workflow.first_rule = "all"
+
+
+configfile: "config/versions.yaml"
+
+
+SAMPLES = config["samples"]
+CALLERS = config["callers"]
+
+
+# do the manual post processes first
+ruleorder: truvari_deletion_refine > wham > truvari_refine > common_postprocess_finalize_raw > common_postprocess_finalize > cnvpytor_postprocess > common_postprocess_zip > manta_calling > common_postprocess_index > dragen > postprocess > truvari_deletion > truvari > lumpy_postprocess
+
+
+# load rules
+# -----------------------------------------------------
+# callers
+for caller in CALLERS:
+
+    include: f"rules/callers/{caller}.smk"
+
+
+# analysis
+include: "rules/truvari.smk"
+include: "rules/analysis.smk"
+
+
+out_dir = config["output"]
+
+
+# optional messages, log and error handling
+onstart:
+    print("\n--- Analysis started ---\n")
+
+
+onsuccess:
+    print("\n--- Workflow finished! ---\n")
+
+
+onerror:
+    print("\n--- An error occurred! ---\n")
+
+
+localrules:
+    common_postprocess_finalize_raw,
+    common_postprocess_finalize,
+    common_postprocess_zip,
+    common_postprocess_index,
+
+
+rule all:
+    input:
+        callers=expand(
+            "{output}/callers/{caller}/{sample}.final.vcf.gz",
+            output=config["output"],
+            sample=SAMPLES,
+            caller=CALLERS,
+        ),
+        stat_summary=config["output"] + "/truvari/stat_summary.png",
+        vcf_summary=config["output"]
+        + "/truvari/type-ignored/pctsizesimilarity_violin.png",
+        upset_analysis=config["output"] + "/truvari/type-ignored/_upset-degreesort.png",
+        width_analysis=config["output"] + "/truvari/type-ignored/count_plot.png",
+    default_target: True
+
+
+## 01. General  ##
+# converts bam to cram if missing any
+rule bam_to_cram:
+    input:
+        bam=config["sample_path"] + "{sample}.bam",
+        reference=config["reference"],
+    output:
+        cram=config["sample_path"] + "{sample}.cram",
+        crai=config["sample_path"] + "{sample}.crai",
+    threads: 1
+    resources:
+        walltime_h=2,
+        mem_mb=16000,
+    log:
+        config["output"] + "/logs/bam-to-cram/{sample}.log",
+    envmodules:
+        "samtools/" + config["samtools_version"],
+    shell:
+        """
+
+            samtools view {input.bam} -C -T {input.reference} -o {output.cram} > {log} 2>&1
+
+            samtools index {output.cram} -c {output.crai} > {log} 2>&1
+
+            """
+
+
+rule sample_split:
+    input:
+        bam=config["sample_path"] + "{sample}.bam",
+        true_vcf=config["truth"],
+    output:
+        true_vcf=config["sample_path"] + "{sample}.vcf.gz",
+        true_vcf_tbi=config["sample_path"] + "{sample}.vcf.gz.tbi",
+    threads: 1
+    resources:
+        walltime_h=2,
+        mem_mb=4000,
+    envmodules:
+        "bcftools/" + config["bcftools_version"],
+    shell:
+        """
+
+        bcftools view {input.true_vcf} -s {wildcards.sample} -Wtbi -o {output.true_vcf} -Ov -AA -a -g ^miss -U                
+
+        """
+
+
+# creates a version of the truth set with only deletions for popdel
+rule truth_del:
+    input:
+        config["sample_path"] + "{sample}.vcf.gz",
+    output:
+        config["sample_path"] + "{sample}_del.vcf.gz",
+    threads: 1
+    resources:
+        walltime_h=2,
+        mem_mb=4000,
+    envmodules:
+        "bcftools/" + config["bcftools_version"],
+    shell:
+        """
+
+        bcftools filter -i "INFO/SVTYPE=='DEL'" {input} -o {output} -Oz
+
+        bcftools index -t {output}
+
+        """
+
+
+# standard postprocessing for all callers. sorts and normalizes
+rule common_postprocess_finalize:
+    input:
+        vcf=config["output"] + "/callers/{caller}/{sample}.vcf.gz",
+        ref=config["reference"],
+    output:
+        sorted=temp(config["output"] + "/callers/{caller}/{sample}.sorted.vcf"),
+        reheader=config["output"] + "/callers/{caller}/{sample}.reheader.vcf",
+        norm=temp(config["output"] + "/callers/{caller}/{sample}.norm.vcf.gz"),
+    threads: 1
+    resources:
+        walltime_h=2,
+        mem_mb=4000,
+    log:
+        config["output"] + "/logs/{caller}/{sample}.final.log",
+    envmodules:
+        "bcftools/" + config["bcftools_version"],
+    shell:
+        """
+
+        echo {wildcards.sample} > {wildcards.sample}.name
+
+        bcftools reheader -f {input.ref}.fai {input.vcf} -o {output.norm} -s {wildcards.sample}.name > {log} 2>&1
+
+        echo "Reheadered" >> {log}
+
+        # Sorts the VCF just in case it isn't already 
+
+        bcftools sort {output.norm} -o {output.sorted} >> {log} 2>&1
+
+        # Warn about bad sites and fix them (recommended)
+
+        # Split multiallic sites into biallelic records, required by truvari
+
+        bcftools norm -f {input.ref} --check-ref ws -m- {output.sorted} -o {output.reheader} -Oz --threads {threads}  >> {log} 2>&1
+
+        """
+
+
+use rule common_postprocess_finalize as common_postprocess_finalize_raw with:
+    input:
+        vcf=config["output"] + "/callers/{caller}/{sample}.vcf",
+        ref=config["reference"],
+
+
+# collapses any possible duplicates for truvari comparison
+rule common_truvari_collapse:
+    input:
+        vcf=config["output"] + "/callers/{caller}/{sample}.reheader.vcf.gz",
+        tbi=config["output"] + "/callers/{caller}/{sample}.reheader.vcf.gz.tbi",
+    output:
+        tempvcf=config["output"] + "/callers/{caller}/{sample}.final.vcf",
+        collapsed=config["output"] + "/callers/{caller}/{sample}.collapse.vcf",
+    log:
+        config["output"] + "/logs/{caller}/{sample}.collapse.log",
+    resources:
+        mem_mb=8000,
+        walltime_h=4,
+    threads: 4
+    envmodules:
+        "truvari/" + config["truvari_version"],
+    shell:
+        """
+        truvari collapse -i {input.vcf} -o {output.tempvcf} -c {output.collapsed} > {log} 2>&1
+        """
+
+
+# zips any vcf that needs it
+rule common_postprocess_zip:
+    input:
+        config["output"] + "/callers/{caller}/{sample}.vcf",
+    priority: -10
+    output:
+        vcf=config["output"] + "/callers/{caller}/{sample}.vcf.gz",
+    threads: 1
+    resources:
+        walltime_h=2,
+        mem_mb=4000,
+    log:
+        config["output"] + "/logs/{caller}/zip-{sample}.log",
+    envmodules:
+        "bcftools/" + config["bcftools_version"],
+    shell:
+        """
+
+        bcftools sort {input} -o {output.vcf} -Oz > {log} 2>&1
+
+        """
+
+
+# index any vcf that needs it
+rule common_postprocess_index:
+    input:
+        config["output"] + "/callers/{caller}/{sample}.vcf.gz",
+    priority: -10
+    output:
+        tbi=config["output"] + "/callers/{caller}/{sample}.vcf.gz.tbi",
+    threads: 1
+    resources:
+        walltime_h=2,
+        mem_mb=4000,
+    log:
+        config["output"] + "/logs/{caller}/index-{sample}.log",
+    envmodules:
+        "bcftools/" + config["bcftools_version"],
+    shell:
+        """
+
+        bcftools index -t {input} > {log} 2>&1 
+
+        """
+
+
+rule postprocess:
+    input:
+        ref_dict=config["human_ref_dict"],
+        vcf=config["output"] + "/callers/{caller}/{sample}.vcf",
+    output:
+        sorted=temp(config["output"] + "/callers/{caller}/{sample}.{caller}_sorted.vcf"),
+        header=temp(config["output"] + "/{caller}/{sample}.{caller}.header"),
+        vcf=config["output"] + "/callers/{caller}/{sample}.vcf.gz",
+        tbi=config["output"] + "/callers/{caller}/{sample}.vcf.gz.tbi",
+    log:
+        config["output"] + "/logs/{caller}/postprocess-{sample}.log",
+    benchmark:
+        config["output"] + "/benchmarks/{caller}/postprocess-{sample}.tsv"
+    threads: 2
+    resources:
+        mem_gb=4,
+        mem_mb=4000,
+        walltime_h=4,
+    envmodules:
+        "htslib/" + config["htslib_version"],
+        "bcftools/" + config["bcftools_version"],
+        "java/" + config["java_version"],
+        "gatk/" + config["gatk_version"],
+    shell:
+        " gatk --java-options '-Xmx{resources.mem_gb}g' SortVcf "
+        "     --INPUT {input.vcf} "
+        "     --SEQUENCE_DICTIONARY {input.ref_dict} "
+        "     --COMPRESSION_LEVEL 0 "
+        "     --QUIET true "
+        "     --CREATE_INDEX false "
+        "     --OUTPUT {output.sorted}; "
+
+        " INFO='##SVCommandLine=<ID={wildcards.caller},"
+        'Date="\'$(date +"%b %d, %Y %r %Z")\'">\'; '
+
+        ' bcftools view -h {output.sorted} | sed "\\$i $INFO" > {output.header}; '
+
+        " bcftools reheader -h {output.header} {output.sorted} "
+
+        " > {output.vcf}; "
+
+        " tabix -p vcf {output.vcf}; "
+        ") > {log} 2>&1 "

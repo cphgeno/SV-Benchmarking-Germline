@@ -1,0 +1,28 @@
+## Define default Snakemake commandline arguments ##
+# Cluster parameters. These are unlikely to be changed
+executor: cluster-generic 
+cluster-generic-submit-cmd: "qsub -W example_PBS_group -A example_PBS_group"
+cluster-config: "cluster.yaml"
+jobscript:      "pbs-jobscript.sh"
+max-jobs-per-second: 2
+max-status-checks-per-second: 1
+local-cores: 1
+immediate-submit: false
+latency-wait: 180
+rerun-incomplete: true
+printshellcmds: true
+
+# Other parameters. Change to suit your needs
+# Run snakemake --help for an explanation of each parameter
+use-singularity: true 
+use-envmodules: true
+software-deployment-method: [apptainer, env-modules]
+benchmark-extended: true 
+restart-times: 1
+jobs: 50
+# keep-going: true
+default-resources:
+  - walltime_h=24
+  - mem_gb=40
+  - disk_mb=0
+  - mem_mb=0
