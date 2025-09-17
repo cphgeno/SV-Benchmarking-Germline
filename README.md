@@ -28,8 +28,8 @@ snakemake --configfile config/pedigree.yaml --profile default
 ```
 project/
 ├── config/
-│   ├── config.yaml          # Main configuration
-│   └── pedigree.yaml        # Example run configuration
+│   ├── versions.yaml        
+│   └── config.yaml          # Example run configuration
 ├── workflow/
 │   ├── Snakefile            # Entry point
 │   ├── profiles/default/    # Cluster profile (NGC)
@@ -52,13 +52,14 @@ project/
 ##  Configuration
 
 Edit `config/config.yaml` to set:
+Replace every /PATH/TO/... placeholder with the actual locations on your system.
 
-* `sample_path`: read-write directory containing input BAMs (`[ID].bam`).
-* `output`: output directory for results.
-* `CALLERS`: list of SV callers to run.
-* `truth_set`: path to truth VCF.
+* `sample_path`: Read-write directory containing the input BAMs (`[ID].bam`).
+Symlinking your BAMs into this directory is recommended. 
+* `output`: Directory where all pipeline results will be written.
+* `CALLERS`: List of SV callers to run (names must match the rules in workflow/rules/callers/).
+* `truth_set`: Full path to the truth VCF used for benchmarking.
 
-Symlinking BAMs into `sample_path` is recommended.
 
 ---
 
