@@ -32,7 +32,7 @@ project/
 │   └── config.yaml          # Example run configuration
 ├── workflow/
 │   ├── Snakefile            # Entry point
-│   ├── profiles/default/    # Cluster profile (NGC)
+│   ├── profiles/default/    # Cluster profile 
 │   ├── rules/
 │   │   ├── callers/         # One .smk per SV caller
 │   │   ├── truvari.smk
