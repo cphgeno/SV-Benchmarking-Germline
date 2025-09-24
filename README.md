@@ -95,8 +95,7 @@ The pipeline creates:
 
 ##  Notes
 
-* Requires **Snakemake ≥ X.Y.Z** (specify your version).
-* For reproducibility, consider creating a `conda` environment or `environment.yml`.
+* Placeholder 
 
 
 
