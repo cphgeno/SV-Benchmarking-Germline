@@ -40,11 +40,7 @@ project/
 │   ├── r-scripts/           # R scripts for analysis
 │   └── scripts/             # Helper scripts
 └── results/                 # Created at runtime
-    ├── benchmarks/
-    ├── callers/<caller>/
-    │   └── <sample>.final.vcf.gz
-    └── truvari/<run>/
-        └── stats + VCFs
+
 ```
 
 ---
