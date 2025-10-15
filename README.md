@@ -35,6 +35,20 @@ project/
 │   ├── profiles/default/    # Cluster profile 
 │   ├── rules/
 │   │   ├── callers/         # One .smk per SV caller
+│   │   │   ├── cnvpytor.smk
+│   │   │   ├── dragen.smk
+│   │   │   ├── gridss.smk
+│   │   │   ├── manta.smk
+│   │   │   ├── popdel.smk
+│   │   │   ├── svaba.smk
+│   │   │   ├── tiddit.smk
+│   │   │   ├── delly.smk
+│   │   │   ├── dysgu.smk
+│   │   │   ├── lumpy.smk
+│   │   │   ├── octopus.smk
+│   │   │   ├── smoove.smk
+│   │   │   ├── tardis.smk
+│   │   │   └── wham.smk
 │   │   ├── truvari.smk
 │   │   └── analysis.smk
 │   ├── r-scripts/           # R scripts for analysis
