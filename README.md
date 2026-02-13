@@ -1,7 +1,7 @@
 # Germline SV Benchmarking Pipeline
 
 
-A Snakemake workflow for running multiple structural‐variant (SV) callers on BAM/CRAM data and benchmarking their results against a single truth set with **[truvari](https://github.com/spiralgenetics/truvari)**.
+A Snakemake workflow for running multiple structural‐variant (SV) callers on short-reads data and benchmarking their results against a single truth set with **[truvari](https://github.com/spiralgenetics/truvari)**.
 
 ---
 
